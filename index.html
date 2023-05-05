@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flappy Bird</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+        }
+
+        #score {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 48px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 2px 2px #000;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" width="400" height="600"></canvas>
+    <div id="score">0</div>
+    <div id="game-over" class="game-over">Game Over</div>
+    <button id="start">Start Game</button>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script>
+        var SCREEN_WIDTH = 400;
+        var SCREEN_HEIGHT = 600;
+        var SPEED = 20;
+        var GRAVITY = 2.5;
+        var GAME_SPEED = 15;
+        var GROUND_WIDTH = 2 * SCREEN_WIDTH;
+        var GROUND_HEIGHT = 100;
+        var PIPE_WIDTH = 80;
+        var PIPE_HEIGHT = 500;
+        var PIPE_GAP = 150;
+        var WING_SOUND = new Audio('assets/audio/wing.wav');
+        var HIT_SOUND = new Audio('assets/audio/hit.wav');
+
+        var bird;
+        var pipes = [];
+        var score = 0;
+        var gameStarted = false;
+        var gameOver = false;
+
+        function Bird() {
+            this.x = SCREEN_WIDTH / 6;
+            this.y = SCREEN_HEIGHT / 2;
+            this.speed = SPEED;
+            this.sprites = [
+                new Image(),
+                new Image(),
+                new Image()
+            ];
+            this.sprites[0].src = 'assets/sprites/bluebird-upflap.png';
+            this.sprites[1].src = 'assets/sprites/bluebird-midflap.png';
+            this.sprites[2].src = 'assets/sprites/bluebird-downflap.png';
+            this.currentSprite = 0;
+            this.width = this.sprites[0].width;
+            this.height = this.sprites[0].height;
+            this.bump = function() {
+                this.speed = -SPEED;
+                WING_SOUND.play();
+            };
+            this.update = function() {
+                this.currentSprite = (this.currentSprite + 1) % 3;
+                this.speed += GRAVITY;
+                this.y += this.speed;
+            };
+            this.draw = function(context) {
+                context.save();
+                context.translate(this.x, this.y);
+                context.rotate(Math.PI / 2 * this.speed / SPEED);
+                context.drawImage(this.sprites[this.currentSprite], -this.width / 2, -this.height / 2);
+                context.restore();
+            };
+        }
+
+        function Pipe(inverted, x, y) {
+            this.x = x;
+            this.y = y;
+            this.width = PIPE_WIDTH;
+            this.height = PIPE_HEIGHT;
+            this.image = new Image();
+            this.image.src = 'assets/sprites/pipe-green.png';
+            this.inverted = inverted;
+            this.update = function() {
+                this.x -= GAME_SPEED;
+            };
+            this.draw = function(context) {
+                context.save();
+                context.translate(this.x, this.y);
+                if (this.inverted) {
+                    context.rotate(Math.PI);
+                    context.drawImage(this.image, -this.width, -this.height, this.width, this.height);
+                } else {
+                    context.drawImage(this.image, 0, 0, this.width, this.height);
+                }
+                context.restore();
+            };
+            this.collidesWith = function(bird) {
+                var birdRect = {
+                    x: bird.x - bird.width / 2,
+                    y: bird.y - bird.height / 2,
+                    width: bird.width,
+                    height: bird.height
+                };
+                var pipeRect = {
+                    x: this.x,
+                    y: this.inverted ? this.y + PIPE_GAP : this.y,
+                    width: this.width,
+                    height: this.height
+                };
+                return birdRect.x < pipeRect.x + pipeRect.width &&
+                       birdRect.x + birdRect.width > pipeRect.x &&
+                       birdRect.y < pipeRect.y + pipeRect.height &&
+                       birdRect.y + birdRect.height > pipeRect.y;
+            };
+        }
+
+        function Ground() {
+            this.x = 0;
+            this.y = SCREEN_HEIGHT - GROUND_HEIGHT;
+            this.width = GROUND_WIDTH;
+            this.height = GROUND_HEIGHT;
+            this.image = new Image();
+            this.image.src = 'assets/sprites/base.png';
+            this.update = function() {
+                this.x -= GAME_SPEED;
+            };
+            this.draw = function(context) {
+                context.drawImage(this.image, this.x, this.y, this.width, this.height);
+                context.drawImage(this.image, this.x + this.width, this.y, this.width, this.height);
+            };
+        }
+
+        function isOffScreen(sprite) {
+            return sprite.x + sprite.width < 0;
+        }
+
+        function getRandomPipes(x) {
+            var size = Math.floor(Math.random() * (SCREEN_HEIGHT - PIPE_GAP - PIPE_HEIGHT));
+            var pipeTop = new Pipe(true, x, size - PIPE_HEIGHT);
+            var pipeBottom = new Pipe(false, x, size + PIPE_GAP);
+            return [pipeTop, pipeBottom];
+        }
+
+        function startGame() {
+            bird = new Bird();
+            pipes = [];
+            score = 0;
+            gameStarted = true;
+            gameOver = false;
+            $('#start').hide();
+            $('#score').show();
+            $('#canvas').show();
+            $('#game-over').hide();
+        }
+
+        function endGame() {
+            gameStarted = false;
+            gameOver = true;
+            $('#start').show();
+            $('#score').hide();
+            $('#canvas').hide();
+            $('#game-over').show();
+            HIT_SOUND.play();
+        }
+
+        function update() {
+            if (!gameStarted) {
+                return;
+            }
+            if (gameOver) {
+                return;
+            }
+            bird.update();
+            pipes.forEach(function(pipe) {
+                pipe.update();
+                if (pipe.collidesWith(bird)) {
+                    endGame();
+                }
+            });
+            pipes = pipes.filter(function(pipe) {
+                return !isOffScreen(pipe);
+            });
+            if (pipes.length === 0) {
+                pipes = pipes.concat(getRandomPipes(SCREEN_WIDTH));
+                score++;
+                $('#score').text(score);
+            }
+            if (bird.y + bird.height / 2 > SCREEN_HEIGHT - GROUND_HEIGHT) {
+                endGame();
+            }
+        }
+
+        function draw() {
+            var canvas = document.getElementById('canvas');
+            var context = canvas.getContext('2d');
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            bird.draw(context);
+            pipes.forEach(function(pipe) {
+                pipe.draw(context);
+            });
+            var ground = new Ground();
+            ground.draw(context);
+        }
+
+        $(document).ready(function() {
+            $('#score').hide();
+            $('#canvas').hide();
+            $('#game-over').hide();
+            $('#start').click(startGame);
+            setInterval(function() {
+                update();
+                draw();
+            }, 1000 / 60);
+        });
+    </script>
+</body>
+</html>
